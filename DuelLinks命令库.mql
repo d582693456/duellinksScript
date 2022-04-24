@@ -1,0 +1,1005 @@
+//全局变量 
+Dim npcWebNumber,isDialogue,reStartFlag
+Dim i = 0
+Dim isChangeWorld = ReadUIConfig("changeWorld") // 获取界面中的切换世界标识
+Dim switchDM = ReadUIConfig("switchDM") 
+Dim switchNEW = ReadUIConfig("switchNEW") 
+Dim switchGX = ReadUIConfig("switchGX") 
+Dim switch5DS = ReadUIConfig("switch5DS") 
+Dim doorNPC = ReadUIConfig("doorNPC") 
+Dim duelYear = ReadUIConfig("duelYear") 
+
+Do
+
+	Rem startBot
+	i = reStartGame(i) // 外部循环重启计数
+	reStartFlag = 0  //刷NPC的内部循环重启计数 
+    //打开duellinks
+	openDuelLinks(i)
+	
+	//进入游戏
+	startGame()
+	
+	//关闭通知和活动提示页面
+	closeMessage 
+	Tap 115,7 //点击操作,取消各种意外
+	
+	If duelYear = true Then 
+		Duelinks决斗年代记.duelByRoll()
+		Else 
+			If doorNPC = true Then 
+			//刷门里传奇NPC
+				duelInDoor()
+			Else 
+				//刷路人NPC
+				clearNPCInRoad()
+			End If
+	End If
+	
+
+
+	Delay 2000
+Loop
+
+Function clearNPCInRoad()
+	
+	//确认NPC所在的界面
+	npcWebNumber = checkNPCWeb()
+	Dim switchNum = 0 //设置切换区域阈值为3
+	Dim switchWorld = 0 //设置切换世界标志
+	Dim nextWorld = 0 //切换下一个世界,默认从DM开始
+	Rem loopFindNPC
+	Do While npcWebNumber <> null //NPC经验区
+		TracePrint switchWorld 
+		//在当前世界切换次数达到，开始切换其他世界
+		If (switchWorld >= 4 And isChangeWorld = true) Then 
+			nextWorld = changeWorld(switchDM, switchNEW, switchGX, switch5DS, nextWorld)
+			switchWorld = 0
+			Goto loopFindNPC
+		End If
+		
+		//当切换区域到达阈值时开始切换
+		If switchNum >= 3 Then 
+			switchArea 
+			switchWorld = switchWorld + 1
+			switchNum = 0 //每次切换区域从新计数
+			//当超过一千次的时候重启一次游戏，防止内存爆炸
+			reStartFlag = reStartFlag + 1
+			TracePrint "重启计数" & reStartFlag
+			If reStartFlag >= 100 Then 
+				i = 20
+				Exit Do
+			End If
+		End If
+		//点掉随机物品
+		getRandom()
+		ShowMessage "寻找NPC"
+		Dim isGetNPC = false
+		//开始自动寻找NPC
+		isGetNPC = autoFindNormalNPC(isGetNPC)
+		
+		//寻找野生传奇决斗者
+		isGetNPC = findWildDueler(isGetNPC)
+		
+		//寻找活动NPC
+		isGetNPC = findActiveNPC(isGetNPC)
+		
+		//寻找小红帽
+		isGetNPC = findRedCap(isGetNPC)
+		
+		//判断是否进入对话
+		isDialogue = checkDialogue()
+
+		Dim isTrue = true //是否正常战斗标志
+		//如果进入到对话界面，则开始战斗环节至结束对话
+		If isDialogue = true Then 
+			switchNum = 0 //还有NPC,清除查找次数
+			 //对话完毕并进入战斗
+			isTrue = autoDuelWithNormalNPC()
+			If (isTrue = true) Then 
+				//处理NPC对战
+				autoDuelTime()
+				Delay 3000 
+				//战斗结束对话
+				autoDuelEnd 
+			End If
+		End If
+		
+		switchNum = switchNum + 1 //找不到NPC则+1 
+		ShowMessage "未找到NPC" & switchNum & "次"
+		//关闭可能临时弹出的辣鸡
+		closeMessage 
+		Tap 115,7 //点击操作
+		Delay 2000
+	Loop
+End Function
+
+
+
+//重启游戏,当主函数循环达到20次重启
+Function reStartGame(i)
+	i = i + 1 
+	If (i >= 20) Then 
+		KillApp "jp.konami.duellinks"
+		reStartGame = 0
+		tipShow("重启游戏")
+		Delay 3000
+	Else reStartGame = i
+	End If
+End Function
+//打开deullinks
+Function openDuelLinks(i)
+	RunApp "jp.konami.duellinks"
+	TracePrint "打开duellinks,脚本重置计数" &i 
+	Delay 1000
+	
+End Function
+
+//开始游戏
+Function startGame()
+	//1、断线重连
+	reConnect 
+	Dim intX,intY//两个坐标变量
+	//2、多点取色查找开始游戏按钮
+	FindMultiColor 0, 0, 0, 0, "FFAA00", "30|-142|FFFF81,87|-423|FFFFEE,44|-293|FFFF81,53|-363|9F5F4F,11|-433|BF7856,-1|-230|E09000", 0, 0.9, intX, intY
+	myFindColor(intX, intY, "开始游戏")
+	//3、万一有更新，点击更新结束之后的开始按钮(有BUG暂时不做)
+//	FindMultiColor 0,0,0,0,"FEFD80","29|-81|F4F4F4,14|-2|D7BD5E,6|-128|BA5F4C,-37|-108|E59000",0,0.9,intX,intY
+//	myFindColor(intX, intY, "开始")
+End Function
+
+//关闭通知和活动提示页面
+Function closeMessage()
+	//1、关闭通知界面
+	closeInformation() //判定是否是通知界面
+	//2、关闭活动NPC
+	closeActiveNPC()
+	//3、关闭登陆奖励
+	closeDayReward 
+	//4、关闭选礼物奖励
+	closePickAGift()
+	//4、点击可能存在的退出图标
+	touchExitPic 
+	//5、关闭临时奖励
+	closeTmpReward 
+
+	
+	//断线重连
+	reConnect()
+End Function
+
+//关闭战斗有关的提示
+Function closeMsOfDuel()
+	//1、关闭任务赛道
+	closeRunWork()
+End Function
+
+//判断NPC界面
+Function checkNPCWeb()
+	Dim intX,intY
+	FindMultiColor 1176,513,1279,698,"EED622","-4|-33|F6E2DE,33|-49|FFCF6F,12|-78|FFDD7B,53|-76|FCEBE2,51|-30|FF1200,-11|-88|B25533",0,0.9,intX,intY
+	If intX > -1 And intY > -1 Then
+		ShowMessage "传送门界面"
+		TracePrint "传送门界面"
+		checkNPCWeb = 1
+	End If
+	If intX = -1 And intY = -1 Then
+		FindMultiColor 1182,249,1276,700,"F9D711","12|-4|EEDA22,19|-35|E1C71E,25|-48|CE5511,29|-51|FDCD6F,15|-104|FFD766",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+			ShowMessage "PVP竞技场界面"
+			TracePrint "PVP竞技场界面"
+			checkNPCWeb = 2
+		End If
+	End If
+	If intX = -1 And intY = -1 Then
+		FindMultiColor 1182,187,1278,381,"EED222","27|-48|FFCB34,43|-38|EF1C01,0|-86|FFECB5,-22|-78|FFFFEE,36|-133|EE7F11,17|-108|7F2F05",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+			ShowMessage "商店界面"
+			TracePrint "商店界面"
+			checkNPCWeb = 3
+		End If
+	End If
+	If intX = -1 And intY = -1 Then	
+		FindMultiColor 1181,9,1276,311,"FFE53A","7|-5|AB690A,9|-9|EED622,20|-21|C79213,11|-67|FFE693,25|-89|FFEBD4",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+			ShowMessage "牌库界面"
+			TracePrint "牌库界面"
+			checkNPCWeb = 4
+		End If
+	End If
+End Function
+
+
+//断线重连
+Function reConnect()
+	findPicAndShowMs "重试.png", "断线重连"
+End Function
+
+//找图并且提示反馈
+Function findPicAndShowMs(picName, msg)
+	Dim intX,intY
+	FindPic 0, 0, 0, 0, "Attachment:"&picName,"000000", 0, 0.9, intX, intY
+	If intX > -1 And intY > -1 Then 
+	ShowMessage msg
+	TracePrint msg
+	Tap intX, intY
+	Delay 300
+	End If
+End Function
+
+//找色点击并提示反馈
+Function myFindColor(intX, intY,msg)
+	If intX > -1 And intY > -1 Then
+	tipShow(msg)
+	Tap intX, intY
+	End If
+End Function
+
+//关闭通知界面
+Function closeInformation()
+	Dim intX,intY
+	//确认通知界面
+	FindMultiColor 115,129,265,174,"FCF0FC","10|4|000101,22|8|000101,53|14|FFFFFF,59|27|FEFEFE",0,0.7,intX,intY
+	If intX > -1 And intY > -1 Then
+	//关闭通知界面
+	findPicAndShowMs("通知界面的返回按钮.png","关闭通知界面")
+	End If
+End Function
+
+//关闭活动NPC
+Function closeActiveNPC()
+	findPicAndShowMs("活动NPC关闭.png","活动NPC关闭")
+End Function
+
+//关闭选礼物
+Function closePickAGift()
+	Dim intX,intY
+	FindMultiColor 0,0,0,0,"09B5DF","-1|-1|00CCFF,0|-9|12A0C1,2|-11|0EAACE,12|-22|1696B3,-2|-86|00CCFF",0,0.9,intX,intY
+	If intX > -1 And intY > -1 Then
+		tipShow ("选择礼物")
+		Tap intX + 100, intY + 150
+		Delay 3000
+		findPicAndShowMs("礼物确认.png","礼物确认")
+		Delay 3000
+		findPicAndShowMs "礼物赠送结束.png", "礼物赠送结束"
+		Delay 3000
+		findPicAndShowMs("离开礼物赠送界面.png","离开礼物赠送界面")
+		Delay 3000
+	End If
+End Function
+
+
+//关闭登陆奖励
+Function closeDayReward()
+	findPicAndShowMs("登陆奖励.png","关闭登陆奖励")
+	findPicAndShowMs("经验结算.png","关闭登陆奖励")
+End Function
+
+//点击可能存在的退出图标
+Function touchExitPic()
+	findPicAndShowMs("误触退出按钮.png","点击退出按钮")
+End Function
+
+//关闭可能存在的临时奖励
+Function closeTmpReward()
+	findPicAndShowMs("临时奖励.png","关闭临时弹窗")
+	findPicAndShowMs "小红帽赠送取消.png", "点击取消"
+	findPicAndShowMs("舍弃NPC对战.png","点击结束")
+End Function
+
+//关闭任务赛道
+Function closeRunWork()
+	findPicAndShowMs("任务赛道.png","关闭任务赛道计分")
+End Function	
+
+
+//关闭活动计分弹窗
+Function closeCalScope()
+	findPicAndShowMs("活动计分弹窗.png","关闭计分")
+End Function
+
+//切换世界
+Function changeWorld(dm, new, gx, ds,nextWorld)
+	TracePrint dm
+		TracePrint new
+			TracePrint gx
+				TracePrint ds
+	Dim wArray = Array(false,false,false,false)
+	//确定自动的世界
+	addWorldToArray (wArray,dm,0)
+	addWorldToArray (wArray,new,1)
+	addWorldToArray (wArray,gx,2)
+	addWorldToArray (wArray, ds, 3)
+	Dim worldNum
+	Dim wLong = UBOUND(wArray)
+	For worldNum = nextWorld To (wLong * 2)
+		TracePrint nextWorld
+		If wArray(worldNum) = true Then 
+			Dim intX,intY
+			FindMultiColor 326,606,477,714,"AD530A","1|-14|FFFFFF",0,0.9,intX,intY //点击世界按钮
+				If intX > -1 And intY > -1 Then
+    			Tap intX, intY
+    			Delay 2000
+    		End If
+    		If worldNum = 0 Then 
+				FindMultiColor 0, 0, 0, 0, "1844EE", "16|8|3589A8,12|19|E9F3F5,36|50|1C44F6,64|56|F7EA26", 0, 0.9, intX, intY
+				myFindColor intX, intY, "切换到DM世界"
+				changeWorld = 1 
+				Exit For
+    		End If
+    		If worldNum = 1 Then 
+				FindMultiColor 0,0,0,0,"1210E0","22|16|000006,40|26|F9F5F0,67|54|F4E828,34|66|1C1CF1,3|88|B2C2AD",0,0.9,intX,intY
+				myFindColor intX, intY, "切换到新世界"
+				changeWorld = 2
+				Exit For
+    		End If
+    		If worldNum = 2 Then 
+				FindMultiColor 0,0,0,0,"F3F1F1","12|9|687073,27|31|88D7EF,23|66|411FEE,31|67|BAE5F0,15|68|7C7070",0,0.9,intX,intY
+				myFindColor intX, intY, "切换到GX世界"
+				changeWorld = 3
+				Exit For
+    		End If
+    		If worldNum = 3 Then 
+				FindMultiColor 0,0,0,0,"221CFF","-14|9|DDEFFA,-8|17|110B9C,30|50|F6E52B,-7|42|53A1CF,-18|55|82CCEE",0,0.9,intX,intY
+				myFindColor intX, intY, "切换到5Ds世界"
+				changeWorld = 0
+				Exit For
+    		End If
+		End If 
+		//跑到最后一个世界，又从头开始切换
+		If worldNum = UBOUND(wArray) Then 
+			worldNum = 0
+		End If
+	Next
+	Delay 7000
+	reConnect()	
+End Function
+
+Function addWorldToArray(wArray, boolen, worldNum)
+	If (boolen = true) Then 
+		wArray(worldNum) = boolen
+	End If
+End Function
+
+//切换NPC区域
+Function switchArea()		
+	TouchDown 819,213,1
+	TouchMove 819,513,1, 300
+	TouchUp 1
+End Function
+
+//点掉随机物品
+Function getRandom()
+	Dim intX,intY
+	FindMultiColor 610,2,1150,710,"6EC3F0","-9|40|0055FC,6|39|0062FF,17|37|0072FF,49|39|009DFF,41|40|B9E1FE",0,0.9,intX,intY
+	myFindColor(intX,intY,"捡起随机物品")
+	Delay 2000
+	Tap 115,7
+End Function
+
+//两种色域找普通NPC的方式
+Function autoFindNormalNPC(isGetNPC)
+	//寻找普通NPC
+	Dim intX,intY
+	FindMultiColor 610,2,1150,710,"A8A89F","0|-1|FDFDF0,3|-2|FFFFEE,-2|-4|D4BF25,4|-9|E0DB58,4|-13|D2C419",0,0.9,intX,intY
+	If intX = -1 And intY = -1 Then
+		FindMultiColor 610,2,1150,710,"FFFFFF","0|-1|EAE5BB,-1|-2|C6AC28,-1|-3|DDC534,0|-5|E3C927,-1|-6|F9F9E4",0,0.9,intX,intY
+	End If
+	If intX = -1 And intY = -1 Then 
+		FindMultiColor 610,2,1150,710,"FFFFFE","26|-10|FFFFFF,78|5|FAFAEB,89|22|FFFFFF,29|8|CEB21C,78|3|A2A34F",0,0.9,intX,intY
+
+	End If
+	If intX > -1 And intY > -1 Then 
+	 	myFindColor(intX + 20, intY + 40, "寻找到普通NPC")
+		isGetNPC = true //找到 NPC
+		Delay 2000
+	End If
+	autoFindNormalNPC = isGetNPC	
+End Function
+
+//寻找野生传奇决斗者
+Function findWildDueler(isGetNPC)
+	If isGetNPC <> true Then 
+		Dim intX,intY
+		FindMultiColor 610,2,1150,710,"F5E9E9","13|-8|F1F1F1,18|-4|E75C05,33|-14|F1EFEF,61|-6|F05C29,75|2|E06C23",0,0.9,intX,intY
+		If intX = -1 and intY = -1 Then 
+			FindMultiColor 610,2,1150,710,"E96D03","-1|-3|ECECEC,15|-7|F9E8E8,30|0|CE510D,45|12|F1F1F1,28|8|F28125",0,0.9,intX,intY
+		End If
+		If intX = -1 and intY = -1 Then 
+			FindMultiColor 610,2,1150,710,"EEDDDD","10|-4|F1F1F1,22|-3|E75D0A,0|2|F4A341,49|13|FFFFF4,48|62|F0E6E6",0,0.9,intX,intY
+		End If
+		If intX = -1 and intY = -1 Then 
+			FindMultiColor 610,2,1150,710,"F6C07C","0|-3|EFEFEF,12|-9|EDCFCF,33|-5|D84006,60|14|EFEDE1,58|77|F9EDEC",0,0.9,intX,intY
+		End If
+		If intX > -1 And intY > -1 Then
+		Tap intX + 30, (intY + 49)
+			tipShow("寻找野生传奇NPC")
+			isGetNPC = true //找到 NPC
+			Delay 2000
+		End If
+	End If
+	findWildDueler = isGetNPC
+End Function
+
+//寻找活动NPC
+Function findActiveNPC(isGetNPC)
+	If isGetNPC <> true Then 
+		tipShow("寻找活动NPC")
+		//此处通过寻找活动NPC头上的EVENT标志		
+		Dim intX,intY
+		FindMultiColor 610,2,1150,710,"FF6B46","2|-3|FFFFFF,39|8|FFE8C5,43|18|F34C07,6|-13|E7704F",0,0.9,intX,intY
+		If intX = -1 And intY = -1 Then 
+			FindMultiColor 610,2,1150,710,"FE8443","4|-3|FFFFFF,4|-28|FBBCB0,5|-36|FE3705,25|-39|FB9019,26|-40|FFDDDD",0,0.9,intX,intY
+		End If
+		myFindColor(intX + 70, intY, "找到活动NPC")
+		If intX > -1 And intY > -1 Then 
+			isGetNPC = true //找到 NPC
+			Delay 2000	
+		End If	
+	End If
+	findActiveNPC = isGetNPC	
+End Function
+
+//寻找小红帽
+Function findRedCap(isGetNPC)
+	If isGetNPC <> true Then 
+		Dim intX,intY
+		FindMultiColor 610,2,1150,710,"CCEEFD","14|-4|F2F9FC,-8|49|4444CA,-1|37|E5D477,20|39|4444C0,20|57|4444BF",0,0.9,intX,intY
+		If intX = -1 And intY = -1 Then 
+			FindMultiColor 610,2,1150,710,"F5F9FC","13|11|27ACD2,-11|54|4444BF,19|43|4444BD,22|77|4444BC",0,0.9,intX,intY
+		End If
+		If intX = -1 And intY = -1 Then 
+			FindMultiColor 610,2,1150,710,"DFF0F8","19|-6|1AB3E6,57|15|EAF7FE,1|34|4444C6,22|33|4F44C0,34|42|99BCE9",0,0.9,intX,intY
+		End If
+		If intX > -1 And intY > -1 Then 
+			myFindColor(intX + 20, intY + 30, "寻找小红帽")
+			isGetNPC = true //找到 NPC
+			Delay 2000
+		End If
+	End If
+	findRedCap = isGetNPC
+End Function
+		
+//检查是否进入对话
+Function checkDialogue()
+	Dim intX,intY
+	FindPic 0,0,0,0,"Attachment:决斗对话框2.png","000000",0,0.9,intX,intY
+	If intX > -1 And intY > -1 Then
+		checkDialogue = true
+	Else
+		checkDialogue = false	
+		closeMessage()
+	End If
+	reConnect()
+End Function
+//进入战斗对白
+Function autoDuelWithNormalNPC()
+	Dim diaEnd = false //战斗前对白结束标志
+	Dim throwTime = 0 //超时次数
+	Do Until (diaEnd = true or throwTime > 30)
+		TracePrint "对白ing"
+		Dim intX,intY
+		FindPic 0,0,0,0,"Attachment:决斗对话框2.png","000000",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+    		Tap intX,intY
+		End If
+		Dim diaX,diaY
+		FindMultiColor 932,0,1265,700,"9D6400","23|-39|FFEE9B,44|-34|E2A943,51|-39|FFAE32,44|-206|683828,42|-176|FFC455",0,0.9,diaX,diaY
+		If diaX > -1 And diaY > -1 Then
+			diaEnd = true
+			Tap diaX,diaY
+			ShowMessage "选择自动战斗"
+			TracePrint "自动战斗"
+		End If
+		throwTime = throwTime + 1
+		reConnect()
+	Delay 500
+	Loop
+	If throwTime > 30 AND diaEnd = false Then 
+		autoDuelWithNormalNPC = False
+		ShowMessage "未找到自动战斗标志,进入自动战斗失败"
+	Else 
+		autoDuelWithNormalNPC = true
+	End If
+	
+End Function
+//结束战斗对白
+Function autoDuelEnd()
+	TracePrint "结束对白ing"
+	Dim isLog = 0//是否出现对话框
+	Do Until isLog >= 10 //标志为11或者11秒依然未找到则跳出循环
+		Tap 432,334 //点击
+		Dim intX,intY
+		FindMultiColor 934,0,1275,246,"BDA23C","2|-28|775500,0|-44|AC8A20,36|-43|DDDDDD,46|-76|EFEFEF,30|-117|FFFFFF",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+    		isLog = 11 //出现对话框则将标志置位11
+    		Exit Do
+    	Else 
+    		isLog = isLog + 1
+		End If
+		Delay 1000
+		closeCalScope() //关闭活动计分
+		reConnect() //断线重连
+		closeMsOfDuel //关闭战斗结束后的消息
+		tipShow("等待结束对话框")
+	Loop
+	Do Until isLog <= 0 
+		Dim tmpX,tmpY
+		FindMultiColor 934,0,1275,246,"BDA23C","2|-28|775500,0|-44|AC8A20,36|-43|DDDDDD,46|-76|EFEFEF,30|-117|FFFFFF",0,0.9,tmpX,tmpY
+		If tmpX > -1 And tmpY > -1 Then
+    		Tap tmpX, tmpY
+    		isLog = 2 // 找到对话框，将对话标志一直置为可对话状态(对话结束则走下面的减法，标志减到0跳出循环)
+    		tipShow ("结束对话")
+    	Else 
+    		isLog = isLog - 1
+		End If
+		reConnect()
+		Delay 1000
+	Loop
+End Function
+//处理NPC对战
+Function autoDuelTime()
+	//战斗结束标志
+	Dim isDuelEnd = false
+	//经验结算标志（战斗奖励与经验结算的图标一样）
+	Dim isEXPEnd = false
+	//战斗奖励标志
+	Dim isReward = false
+	Dim outTime = 0
+	//循环等待战斗结束
+	Do Until (isDuelEnd = true)
+	  	tipShow("等待战斗结束")
+		Dim deulX,deulY
+		FindPic 0,0,0,0,"Attachment:战斗结束.png","000000",0,0.9,deulX,deulY
+		If deulX > -1 And deulY > -1 Then
+			isDuelEnd = true
+			ShowMessage "战斗结束"
+			TracePrint "战斗结束"
+			Tap deulX,deulY
+		End If
+		reConnect()
+		Delay 4000
+		outTime = outTime + 1
+			tipShow ("超时计时" & outTime & ",达到90次重启")
+		//此处最好再加一个是否在战斗画面
+		If outTime >= 90 Then 
+			Goto duelOutTimeRem
+		End If
+	Loop
+	//循环等待经验结算
+	outTime = 0
+	Do Until (isEXPEnd = true)	
+		Tap 160,380 //点击
+		Dim expX,expY  
+		FindPic 0,0,0,0,"Attachment:经验结算.png","000000",0,0.9,expX,expY
+		If expX > -1 And expY > -1 Then
+				isEXPEnd = true
+				ShowMessage "经验结算"
+				TracePrint "经验结算"
+				Tap expX,expY
+		End If
+		reConnect()
+		Delay 1000
+		outTime = outTime + 1
+			ShowMessage ("超时计时" & outTime & ",达到30次重启")
+		If outTime >= 30 Then 
+			Goto duelOutTimeRem
+		End If
+	Loop
+	outTime = 0
+	//循环等待战斗奖励
+	Do Until (isReward = true)
+		Tap 160,380 //点击
+		Dim endX,endY  
+		FindPic 0,0,0,0,"Attachment:经验结算.png","000000",0,0.9,endX,endY
+		If endX > -1 And endY > -1 Then
+				isReward = true
+				ShowMessage "战斗奖励"
+				TracePrint "战斗奖励"
+				Tap endX,endY
+		End If
+		reConnect()
+		Delay 1000
+		outTime = outTime + 1
+			ShowMessage ("超时计时" & outTime & ",达到30次重启")
+		If outTime >= 30 Then 
+			Goto duelOutTimeRem
+		End If
+	Loop
+	Rem duelOutTimeRem
+End Function
+
+Function tipShow(msg)
+	ShowMessage msg
+	TracePrint msg
+End Function
+
+
+/*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+*/
+
+//自动刷门里传奇路人方法
+Function duelInDoor()
+	//首先保障地图界面为传送门界面
+	Dim areaNum 
+
+	//确认NPC所在的界面
+	areaNum = checkNPCWeb()
+	If areaNum <> 1 And areaNum <> null Then 
+		switchArea 
+	End If
+	TracePrint areaNum
+	Delay 1000
+	reConnect 
+	Do While areaNum = 1 
+		ShowMessage "开始敲门"
+		closeMessage()
+		Dim isDuel = false //流程是否正常的标志
+		Tap 540,210 //点击门
+		//点击决斗
+		isDuel = doorChooseDuel(isDuel)
+		//对话并进入决斗选项
+		isDuel = doorDialogAndDuel(isDuel)
+		//进入战斗环节
+		isDuel = doorDueling(isDuel)
+		//战斗结算
+		isDuel = doorSettle (isDuel)
+		//结束对话
+		doorEndDialog (isDuel)
+		If (isDuel = false) Then 
+			tipShow ("战斗环节出错，等待重新开始")
+			Exit Do
+		End If
+		Delay 2000
+	Loop
+End Function
+
+//点击决斗
+Function doorChooseDuel(isDuel)
+	Dim intX,intY
+	For i = 0 To 10
+		Rem chooseDuel
+		FindMultiColor 930,51,1265,646,"1AB0DF","-14|8|35E9F6,12|36|0AA6F7,-21|50|21635F,-6|75|1C0B08",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+			TracePrint "点击决斗"
+    		Tap intX, intY
+    		isDuel = true
+    		Delay 1000
+    		//此处有可能提示NPC已在野外，所以直接点击确认
+			FindPic 0, 0, 0, 0, "Attachment:确认进入战斗.png","000000", 0, 0.9, intX, intY
+			If intX > -1 And intY > -1 Then 
+				tipShow "注意，此NPC已经在野外"
+				Tap intX, intY
+				Delay 300
+				Goto chooseDuel
+			End If
+			reConnect
+    		Exit For
+    	End If
+
+		Delay 1000
+	Next
+	doorChooseDuel = isDuel
+End Function
+
+//对话并进入决斗选项
+Function doorDialogAndDuel(isDuel)
+	If (isDuel = true) Then 
+		Dim intX,intY
+		For i = 0 To 10
+			FindPic 0,0,0,0,"Attachment:决斗对话框2.png","000000",0,0.9,intX,intY
+			If intX > -1 And intY > -1 Then
+				Tap intX, intY //对话
+				Delay 100
+				//寻找决斗按钮
+				FindMultiColor 0,0,0,0,"1BC4FB","-4|8|0B0402,-14|3|33E7F7,-14|2|19676D,-15|63|35EAF6",0,0.9,intX,intY
+				If intX > -1 And intY > -1 Then
+					TracePrint "点击决斗按钮"
+    				Tap intX, intY
+    				isDuel = true
+    				Delay 500
+    				Exit For
+    			Else 
+    				isDuel = false
+				End If
+			End If
+			reConnect
+			Delay 500	
+		Next
+	End If
+	doorDialogAndDuel = isDuel
+End Function
+
+//进入战斗环节
+Function doorDueling(isDuel)
+	If isDuel = true Then 
+		//刚进入战斗需要等待20秒开局画面
+		For i = 0 To 10
+			reConnect
+			tipShow("等待开局")
+			Tap 620,330 //点击加速
+			Delay 1000
+		Next
+		Dim dueling = false //战斗是否顺利
+		//开始战斗
+		For i = 0 To 50
+			reConnect
+			Tap 620,330 //点击加速
+			Dim intX,intY //我的回合再行动
+			FindPic 0,0,0,0,"Attachment:我的回合.png","000000",0,0.9,intX,intY
+			If intX > -1 And intY > -1 Then 
+				Delay 2000
+				//抽卡
+//				drawCard()
+				Tap 620,330 //点击加速
+				Delay 1000
+				Tap 620,330 //点击加速
+				TracePrint "抽卡"
+				//上怪
+				dueling = addMonster(dueling)
+				//战斗
+				attackMonster (dueling)
+			End If
+			//打完出现"好"就跳出循环准备进入结算
+				If (foundDuelEnd() = true) Then 
+					isDuel = true
+					Exit For
+				Else 
+					isDuel = False
+				End If
+			Delay 1000
+			ShowMessage "战斗计时" & i 
+		Next
+	End If
+	doorDueling = isDuel
+End Function
+
+//战斗结算
+Function doorSettle(isDuel)
+	If (isDuel = true) Then 
+	//经验结算标志（战斗奖励与经验结算的图标一样）
+		Dim isEXPEnd = false
+		//战斗奖励标志
+		Dim isReward = false
+		Dim outTime = 0
+		//循环等待经验结算
+		Do Until (isEXPEnd = true)	
+			Tap 160,380 //点击
+			Dim expX,expY  
+			FindPic 0,0,0,0,"Attachment:经验结算.png","000000",0,0.9,expX,expY
+			If expX > -1 And expY > -1 Then
+					isEXPEnd = true
+					ShowMessage "经验结算"
+					TracePrint "经验结算"
+					Tap expX,expY
+			End If
+			reConnect()
+			Delay 1000
+			outTime = outTime + 1
+				ShowMessage ("超时计时" & outTime & ",达到30次重置")
+			If outTime >= 30 Then 
+				doorSettle = false
+				Goto duelOutTimeRem
+			End If
+		Loop
+		outTime = 0
+		//循环等待战斗奖励
+		Do Until (isReward = true)
+			Tap 160,380 //点击
+			Dim endX,endY  
+			FindPic 0,0,0,0,"Attachment:经验结算.png","000000",0,0.9,endX,endY
+			If endX > -1 And endY > -1 Then
+				isReward = true
+				ShowMessage "战斗奖励"
+				TracePrint "战斗奖励"
+				Tap endX, endY
+				isDuel = true
+			Else 
+				isDuel = false
+			End If
+			reConnect()
+			Delay 1000
+			outTime = outTime + 1
+				ShowMessage ("超时计时" & outTime & ",达到30次重置")
+			If outTime >= 30 Then 
+				doorSettle = false
+				Goto duelOutTimeRem
+			End If
+		Loop
+	End If
+	Rem duelOutTimeRem
+	doorSettle = isDuel
+End Function
+
+//战后对白
+Function doorEndDialog(isDuel)
+	If (isDuel = true) Then 
+		TracePrint "结束对白ing"
+		Dim isLog = 0//是否出现对话框
+		Do Until isLog >= 10 //标志为11 或者 11秒依然未找到则跳出循环
+			Tap 115,7 //点击操作
+			Dim intX,intY
+			FindMultiColor 934,0,1275,246,"BDA23C","2|-28|775500,0|-44|AC8A20,36|-43|DDDDDD,46|-76|EFEFEF,30|-117|FFFFFF",0,0.9,intX,intY
+			If intX > -1 And intY > -1 Then
+    			isLog = 11 //出现对话框则将标志置位11
+    			TracePrint "已找到对话框"
+    			Exit Do
+    		Else 
+    			isLog = isLog + 1
+			End If
+			Delay 1000
+			closeCalScope()
+			reConnect()
+			closeMessage
+			tipShow("等待结束对话框" & isLog)
+		Loop
+		Do Until isLog <= 0 
+			Dim tmpX,tmpY
+			FindMultiColor 934,0,1275,246,"BDA23C","2|-28|775500,0|-44|AC8A20,36|-43|DDDDDD,46|-76|EFEFEF,30|-117|FFFFFF",0,0.9,tmpX,tmpY
+			If tmpX > -1 And tmpY > -1 Then
+    			Tap tmpX, tmpY
+    			isLog = 2 // 找到对话框，将对话标志一直置为可对话状态(对话结束则走下面的减法，标志减到0跳出循环)
+    			tipShow ("结束对话")
+    		Else 
+    			isLog = isLog - 1
+				tipShow ("等待结束"  & isLog )
+			End If
+			reConnect()
+			Delay 1000
+		Loop	
+	End If
+End Function
+
+//上怪
+Function addMonster(dueling)
+	reConnect
+	Dim intX,intY
+	Delay 1500
+	tipShow("召唤怪兽")
+	//根据是否存在功能键作为标识
+	FindMultiColor 0,0,0,0,"512002","0|4|FFE477,-13|8|FFF3AF,-33|14|FFFFFA,-11|-44|B0873A,-16|-41|FFEC77",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+			//直接拖拽
+    		drawMonsterCard 1200, 450
+    		dueling = true
+		End If
+	Delay 500 //点击召唤
+	FindMultiColor 0,0,0,0,"220D00","6|-18|AFA9AB,6|-16|E5DDE2,33|-2|885D07,44|-8|FFFFFF,54|-2|AD9C83,60|4|AD8211",0,0.9,intX,intY
+	If intX > -1 And intY > -1 Then
+    	Tap intX, intY
+    	Delay 1000
+	End If
+	addMonster = dueling
+	Delay 1500
+End Function
+
+//怪物战斗
+Function attackMonster(dueling)
+	If dueling = True Then 
+		Delay 1000
+		tipShow "进入战斗阶段"
+    	drawMonsterCard(700,350)
+    	Delay 1000
+    	//如果出现进入战斗阶段弹窗，则点击确认
+		checkDuel 
+		
+		Dim intX,intY
+		For i = 0 To 5
+			reConnect 
+			Dim isAttack = false
+			tipShow "战斗阶段" & i
+			//战斗(根据场上卡片是否泛绿色，即未使用为标准,快速找10次)
+			For a = 0 To 40
+				Delay 50
+				//FindMultiColor 623, 11, 1025, 703, "196400", "1|1|1F7B00,2|3|249200,3|4|26AA00", 0, 0.9, intX, intY
+				FindMultiColor 0,0,0,0,"1A6300","1|2|1D7A00,2|-2|249000,3|-11|26A700,89|-11|61E8EE,114|-11|111E88,113|-7|020656",0,0.9,intX,intY
+				If intX > -1 And intY > -1 Then 
+					TracePrint "找到攻击状态的怪兽"
+					isAttack = true
+					Exit For
+				End If
+			Next
+			//如果没有能够攻击的怪兽则结束回合
+			If isAttack = False Then 
+				Exit For
+			End If
+			If intX > -1 And intY > -1 Then
+				TracePrint "战斗ING"
+    			drawMonsterCard intX + 50, intY + 10 //怪物战斗
+    			Delay 2000
+    			checkDuel() //确认进入战斗弹窗
+			End If
+		Next
+		Delay 1000
+		//点击功能键
+		FindMultiColor 0,0,0,0,"512002","0|4|FFE477,-13|8|FFF3AF,-33|14|FFFFFA,-11|-44|B0873A,-16|-41|FFEC77",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+			TracePrint "点击功能键"
+    		Tap intX, intY
+    				Delay 500
+			//如果已过了战斗阶段，则可以回合结束
+			FindMultiColor 0,0,0,0,"B4A44B","19|-15|332A00,8|-27|D7C669,-7|-43|5E511B,-11|-69|B5A450,3|-91|FAE99B",0,0.9,intX,intY
+			If intX > -1 And intY > -1 Then
+				TracePrint "还有战斗阶段"
+			Else 
+				//点击回合结束
+				FindMultiColor 0,0,0,0,"FFFFFB","0|-5|272403,17|-4|2A2A00,12|-35|FFFFFF,-19|-84|8C896B,-30|-78|A6A49B",0,0.9,intX,intY
+				If intX > -1 And intY > -1 Then
+					TracePrint "回合结束"
+    				Tap intX, intY
+    				Delay 2000
+    				//如果出现弃牌
+    				Dim isThrow = true
+    				Do Until isThrow = False
+						FindPic 0,0,0,0,"Attachment:弃牌.png","000000",0,0.9,intX,intY
+						If intX > -1 And intY > -1 Then
+							TracePrint intX
+							TracePrint intY
+							Tap intX, intY
+							Delay 500
+							//弃置选中的牌
+							FindMultiColor 0,0,0,0,"EEECEA","10|-11|938B84,10|-12|1F1003,8|-20|FFFFFF,27|-47|BEBDB7,20|-57|FFFFFF",0,0.9,intX,intY
+							If intX > -1 And intY > -1 Then
+								TracePrint "弃牌"
+    							Tap intX, intY
+    							Delay 1500
+							End If
+						Else 
+						 	isThrow = False
+						End If
+					Loop
+				End If
+				
+			End If
+		End If
+	End If
+End Function
+//确认进入战斗阶段弹窗
+Function checkDuel()
+	//如果出现进入战斗阶段弹窗，则点击确认
+	Dim intX,intY   
+	FindPic 0,0,0,0,"Attachment:确认进入战斗.png","000000",0,0.9,intX,intY
+	If intX > -1 And intY > -1 Then 
+		Tap intX, intY
+		Delay 1000
+	End If
+	FindPic 0,0,0,0,"Attachment:战斗阶段的确定.png","000000",0,0.9,intX,intY
+	If intX > -1 And intY > -1 Then
+		Tap intX, intY
+		Delay 1000
+	End If
+End Function
+
+//战斗结束标志
+Function foundDuelEnd()
+	Dim deulX,deulY
+		FindPic 0,0,0,0,"Attachment:战斗结束.png","000000",0,0.9,deulX,deulY
+		If deulX > -1 And deulY > -1 Then
+			ShowMessage "战斗结束"
+			TracePrint "战斗结束"
+			Tap deulX, deulY
+			Delay 4000
+			foundDuelEnd = true
+		Else 
+			foundDuelEnd = False
+		End If
+		
+End Function
+
+//工具区
+Function drawMonsterCard(intX, intY)
+	TouchDown intX,intY, 1
+	TouchMove 300, 300, 1, 200
+	TouchUp 1
+End Function
+
+

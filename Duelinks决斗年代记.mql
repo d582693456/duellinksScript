@@ -1,0 +1,137 @@
+Import "DuelLinks命令库.mql"
+
+Function duelByRoll()
+	//点进决斗年代记
+	enterDuelYeal()
+	//判断是否进入决斗年代记棋盘界面
+	Dim isOk = isEnterDuelYeal()
+    Dim isInRoll = 0
+    If isOk = true Then 
+    	Do Until	isInRoll = 20
+			//点击掷骰子
+			touchRoll() 
+			//如果有对话，直接点击加速
+			fastForward
+			Dim isDuel = false
+			//选择战斗模式
+			chooseDuelType(isDuel, true)
+			//判断是否进入对话
+			Dim isDialogue = checkDialogueInDuelYear()
+	
+			Dim isTrue = true //是否正常战斗标志
+			//如果进入到对话界面，则开始战斗环节至结束对话
+			If isDialogue = true Then 
+				//对话完毕并进入战斗
+				isTrue = DuelLinks命令库.autoDuelWithNormalNPC()
+				If (isTrue = true) Then 
+					//处理NPC对战
+					DuelLinks命令库.autoDuelTime()
+					Delay 3000 
+					//战斗结束对话
+					DuelLinks命令库.autoDuelEnd 
+					//重置计数
+					isInRoll = 0
+				
+				End If
+			End If
+			isInRoll = isInRoll + 1
+		Loop
+		DuelLinks命令库.reConnect
+    End If
+    
+End Function
+
+
+
+
+
+
+
+
+//点击决斗年代记
+Function enterDuelYeal()
+	Dim intX,intY
+	FindPic 0,0,0,0,"Attachment:决斗年代记标志.png","000000",0,0.9,intX,intY
+	If intX > -1 And intY > -1 Then
+		TracePrint "进入棋盘"
+		Tap intX, intY
+		enterDuelYeal = true
+		Delay 5000
+	Else 
+		enterDuelYeal = false
+	End If
+End Function
+
+//判断是否进入决斗年代记界面
+Function isEnterDuelYeal()
+	Dim intX,intY
+	FindPic 0,0,0,0,"Attachment:决斗年代记界面.png","000000",0,0.9,intX,intY
+	If intX > -1 And intY > -1 Then
+		TracePrint "界面确认"
+		isEnterDuelYeal = true
+	Else 
+		TracePrint "未找到决斗年代记界面"
+		isEnterDuelYeal = false
+	End If
+End Function
+
+Function touchRoll()
+	For i = 0 to 10
+		Dim intX,intY
+		FindMultiColor 0,0,0,0,"0000FF","4|-21|FFFFFF,15|-48|131313,6|-78|2C169B,-2|-148|E2F8FF,14|-159|8DDEFA,28|-161|42C9F0",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+			TracePrint "掷骰子"
+    		Tap intX,intY
+		End If
+		Delay 100
+		Tap 256,691 //取消各种弹窗
+		DuelLinks命令库.reConnect
+	Next
+End Function
+
+Function fastForward()
+	Dim intX,intY
+	FindPic 0,0,0,0,"Attachment:快进.png","000000",0,0.9,intX,intY
+	If intX > -1 And intY > -1 Then
+		TracePrint "点击快进"
+		Tap intX,intY
+	End If
+	DuelLinks命令库.reConnect
+	Delay 1000
+End Function
+
+Function chooseDuelType(isDuel,type)
+	If (type = false) Then 
+		Dim intX,intY
+		FindPic 0,0,0,0,"Attachment:困难模式.png","000000",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+			TracePrint "选择困难模式"
+			Tap intX,intY
+		End If
+	Else 
+		FindPic 0,0,0,0,"Attachment:普通模式.png","000000",0,0.9,intX,intY
+		If intX > -1 And intY > -1 Then
+			TracePrint "选择普通模式"
+			Tap intX,intY
+		End If
+	End If
+	//选择战斗模式之后证明一件进入正常战斗环节
+	If intX > -1 And intY > -1 Then 
+		isDuel = True
+	End If
+	Delay 1000
+	DuelLinks命令库.reConnect
+	chooseDuelType = isDuel
+End Function
+
+//检查是否进入对话,决斗年代记里的功能
+Function checkDialogueInDuelYear()
+	Dim intX,intY
+	FindPic 0,0,0,0,"Attachment:决斗对话框2.png","000000",0,0.9,intX,intY
+	If intX > -1 And intY > -1 Then
+		checkDialogueInDuelYear = true
+	Else
+		checkDialogueInDuelYear = false	
+	End If
+	DuelLinks命令库.reConnect()
+End Function
